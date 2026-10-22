@@ -1,0 +1,4 @@
+# xv6 se compila en Linux: los archivos deben quedar con finales de línea
+# LF aunque se clonen o se editen en Windows (un Makefile con CRLF no sirve).
+* text=auto eol=lf
+*.pdf binary
