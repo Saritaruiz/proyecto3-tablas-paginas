@@ -41,9 +41,11 @@ agregaron, en la misma ruta que tienen dentro de xv6.
 Makefile              pgtbltest agregado a UPROGS
 kernel/
 ├── memlayout.h       USYSCALL y struct usyscall
+├── proc.h            campo usyscall en struct proc
+├── proc.c            reservar, mapear, desmapear y liberar USYSCALL; límite de growproc()
 ├── syscall.h         números de vmprint y pgaccess
 ├── syscall.c         registro de vmprint y pgaccess
-└── sysproc.c         sys_vmprint y sys_pgaccess
+└── sysproc.c         sys_vmprint, sys_pgaccess y límite de sys_sbrk()
 user/
 ├── ulib.c            ugetpid()
 ├── user.h            declaraciones de ugetpid, vmprint y pgaccess
@@ -51,7 +53,6 @@ user/
 ├── pgtbltest.c       pruebas del curso
 └── usertests.c       versión del curso de usertests
 ejecutar_pruebas.py   script del curso que genera la evidencia
-probar.sh             copia los archivos sobre un xv6 limpio y corre las pruebas
 pruebas/              evidencia generada por ejecutar_pruebas.py
 ```
 
@@ -81,20 +82,38 @@ make qemu
 
 Dentro de xv6: `pgtbltest` y `usertests -q`.
 
-## Atajo: probar.sh
-
-Desde WSL o Linux, en la carpeta de este repositorio, `bash probar.sh` hace los
-pasos 1 a 3 en `~/proyecto3-xv6`, corre las dos suites y copia la evidencia a
-`pruebas/`. También acepta `pgtbltest`, `usertests` o `qemu` como argumento.
-
-xv6 no compila en una ruta con espacios (por ejemplo `C:\Users\Sara Ruiz\...`),
-por eso el script compila en el directorio personal de WSL.
-
 ---
 
 # Parte A: página compartida y ugetpid()
 
-_Pendiente._
+Cada proceso tiene una página física propia, `p->usyscall`, mapeada en la
+dirección virtual `USYSCALL` (`0x3fffffd000`), justo debajo de `TRAPFRAME`:
+
+```text
+0x3ffffff000  TRAMPOLINE   R X       (solo el kernel)
+0x3fffffe000  TRAPFRAME    R W       (solo el kernel)
+0x3fffffd000  USYSCALL     R     U   struct usyscall { int pid; }
+     ...      heap (crece hasta USYSCALL como máximo)
+```
+
+| Paso | Dónde | Qué se hace |
+|---|---|---|
+| Reservar | `allocproc()` en `kernel/proc.c` | `kalloc()` de una página, `memset` a cero y `p->usyscall->pid = p->pid`. Se hace antes de `proc_pagetable()`, que necesita la página para mapearla. |
+| Mapear | `proc_pagetable()` | `mappages(..., USYSCALL, ..., PTE_R \| PTE_U)`. Si falla, se desmapean `TRAPFRAME` y `TRAMPOLINE` antes de liberar la tabla. |
+| Desmapear | `proc_freepagetable()` | `uvmunmap(pagetable, USYSCALL, 1, 0)`, sin liberar la página física. Sin esto, `freewalk()` entra en pánico (`freewalk: leaf`). |
+| Liberar | `freeproc()` | `kfree(p->usyscall)`, igual que el trapframe. |
+| Limitar el heap | `growproc()` y `sys_sbrk()` | El tope pasa de `TRAPFRAME` a `USYSCALL`, para que ni `sbrk()` ni `sbrklazy()` crezcan encima de la página. |
+| Leer el pid | `ugetpid()` en `user/ulib.c` | Lee `((struct usyscall *)USYSCALL)->pid`, sin `ecall`. |
+
+La página física pertenece a `struct proc` y no a la tabla de páginas. Por eso
+`proc_freepagetable()` la desmapea con `do_free = 0` y la libera `freeproc()`.
+`exec()` crea una tabla nueva con `proc_pagetable(p)`, que vuelve a mapear la
+misma página, y luego destruye la vieja con `proc_freepagetable()`. Si esa
+función liberara la página, el proceso perdería su pid después de `exec()`.
+
+La página se llena de ceros porque el proceso puede leerla completa.
+`kalloc()` la entrega con basura (el byte 5), y así lo que el proceso ve fuera
+de `pid` es siempre cero.
 
 # Parte B: vmprint()
 
@@ -121,11 +140,5 @@ _Pendiente._
 _Pendiente._
 
 # Limitaciones conocidas
-
-_Pendiente._
-
----
-
-# Declaración de uso de IA
 
 _Pendiente._
