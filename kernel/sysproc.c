@@ -112,11 +112,12 @@ sys_uptime(void)
   return xticks;
 }
 
-// Pendiente (Parte B): imprimir la tabla de páginas del proceso.
+// Imprime la tabla de páginas del proceso actual.
 uint64
 sys_vmprint(void)
 {
-  return -1;
+  vmprint(myproc()->pagetable);
+  return 0;
 }
 
 // Pendiente (Parte C): reportar las páginas accedidas desde la última
