@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
 #include "kernel/riscv.h"
+#include "kernel/memlayout.h"
 #include "kernel/vm.h"
 #include "user/user.h"
 
@@ -161,9 +162,11 @@ sbrklazy(int n)
   return sys_sbrk(n, SBRK_LAZY);
 }
 
-// Pendiente (Parte A): leer el pid de la página USYSCALL.
+// Devuelve el pid sin hacer una llamada al sistema: lo lee de la
+// página USYSCALL, que el kernel mapea en cada proceso.
 int
 ugetpid(void)
 {
-  return -1;
+  struct usyscall *u = (struct usyscall *)USYSCALL;
+  return u->pid;
 }
