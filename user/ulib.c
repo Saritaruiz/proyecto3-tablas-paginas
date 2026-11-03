@@ -162,11 +162,8 @@ sbrklazy(int n)
   return sys_sbrk(n, SBRK_LAZY);
 }
 
-// Devuelve el pid sin hacer una llamada al sistema: lo lee de la
-// página USYSCALL, que el kernel mapea en cada proceso.
 int
 ugetpid(void)
 {
-  struct usyscall *u = (struct usyscall *)USYSCALL;
-  return u->pid;
+  return ((struct usyscall *)USYSCALL)->pid;
 }

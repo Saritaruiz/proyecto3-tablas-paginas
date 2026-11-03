@@ -490,37 +490,28 @@ ismapped(pagetable_t pagetable, uint64 va)
   return 0;
 }
 
-// Recorre recursivamente la tabla de páginas imprimiendo solo las PTEs
-// válidas en sus tres niveles con el formato requerido.
 static void
-vmprint_walk(pagetable_t pagetable, int level, uint64 base_va)
+vmprint_walk(pagetable_t pagetable, int level, uint64 prefix)
 {
   for (int i = 0; i < 512; i++) {
     pte_t pte = pagetable[i];
-    if (pte & PTE_V) {
-      uint64 va = base_va | ((uint64)i << PXSHIFT(level));
-      uint64 pa = PTE2PA(pte);
+    if ((pte & PTE_V) == 0)
+      continue;
 
-      if (level == 2)
-        printk(" ..%p: pte %p pa %p\n", (void *)va, (void *)pte, (void *)pa);
-      else if (level == 1)
-        printk(" .. ..%p: pte %p pa %p\n", (void *)va, (void *)pte, (void *)pa);
-      else if (level == 0)
-        printk(" .. .. ..%p: pte %p pa %p\n", (void *)va, (void *)pte, (void *)pa);
+    uint64 va = prefix | ((uint64)i << PXSHIFT(level));
+    for (int indent = 0; indent < 3 - level; indent++)
+      printk(" ..");
+    printk("%p: pte %p pa %p\n", (void *)va, (void *)pte,
+           (void *)PTE2PA(pte));
 
-      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
-        uint64 child = PTE2PA(pte);
-        vmprint_walk((pagetable_t)child, level - 1, va);
-      }
-    }
+    if (level > 0 && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      vmprint_walk((pagetable_t)PTE2PA(pte), level - 1, va);
   }
 }
 
-// Imprime la tabla de páginas del proceso en sus tres niveles.
 void
 vmprint(pagetable_t pagetable)
 {
   printk("page table %p\n", (void *)pagetable);
   vmprint_walk(pagetable, 2, 0);
 }
-

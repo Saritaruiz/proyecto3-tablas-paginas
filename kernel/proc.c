@@ -124,6 +124,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->killed = 0;
+  p->pagetable = 0;
+  p->trapframe = 0;
+  p->usyscall = 0;
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
@@ -132,9 +136,7 @@ found:
     return 0;
   }
 
-  // Página USYSCALL: guarda el pid para que ugetpid() lo lea sin
-  // entrar al kernel. Se reserva antes de proc_pagetable(), que la
-  // mapea. Se llena de ceros porque el proceso puede leerla completa.
+  // Allocate the page shared with user space for ugetpid().
   if ((p->usyscall = (struct usyscall *)kalloc()) == 0) {
     freeproc(p);
     release(&p->lock);
@@ -185,7 +187,7 @@ freeproc(struct proc *p)
 }
 
 // Create a user page table for a given process, with no user memory,
-// but with trampoline, trapframe and USYSCALL pages.
+// but with trampoline, trapframe, and USYSCALL pages.
 pagetable_t
 proc_pagetable(struct proc *p)
 {
@@ -215,10 +217,8 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
-  // mapear la página USYSCALL justo debajo del trapframe. PTE_U para
-  // que el usuario la lea; sin PTE_W, así que escribirla mata al
-  // proceso y nadie puede cambiar el pid que ve ugetpid().
-  if (mappages(pagetable, USYSCALL, PGSIZE, (uint64)(p->usyscall),
+  // User can read the shared pid page, but cannot modify it.
+  if (mappages(pagetable, USYSCALL, PGSIZE, (uint64)p->usyscall,
                PTE_R | PTE_U) < 0) {
     uvmunmap(pagetable, TRAPFRAME, 1, 0);
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
@@ -236,9 +236,6 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  // do_free = 0: la página física es de struct proc y la libera
-  // freeproc(). exec() también llega aquí con la tabla vieja, y el
-  // proceso sigue usando la misma página.
   uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
@@ -269,7 +266,6 @@ growproc(int n)
 
   sz = p->sz;
   if (n > 0) {
-    // el heap termina donde empieza USYSCALL
     if (sz + n > USYSCALL) {
       return -1;
     }

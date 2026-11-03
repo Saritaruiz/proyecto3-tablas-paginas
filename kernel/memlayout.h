@@ -65,9 +65,7 @@
 #define USYSCALL  (TRAPFRAME - PGSIZE)
 
 #ifndef __ASSEMBLER__
-// Contenido de la página USYSCALL. El kernel la escribe al crear el
-// proceso y el usuario solo la lee (ugetpid() en user/ulib.c).
 struct usyscall {
-  int pid; // Process ID
+  int pid;
 };
 #endif

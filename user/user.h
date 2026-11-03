@@ -26,7 +26,8 @@ int pause(int);
 int uptime(void);
 int sync(void);
 int vmprint(void);
-int pgaccess(void *base, int npages, uint64 *mask);
+int pgaccess(void *, int, uint64 *);
+int ugetpid(void);
 
 // ulib.c
 int stat(const char *, struct stat *);
@@ -42,7 +43,6 @@ int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
 char *sbrk(int);
 char *sbrklazy(int);
-int ugetpid(void);
 
 // printf.c
 void fprintf(int, const char *, ...) __attribute__((format(printf, 2, 3)));
