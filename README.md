@@ -148,7 +148,11 @@ y páginas hoja de nivel 0).
 
 # Parte C: pgaccess()
 
-_Pendiente._
+`pgaccess()` consulta entre 1 y 64 páginas alineadas y construye una máscara
+con las páginas que tienen el bit `PTE_A`. Luego limpia los bits detectados
+para que la siguiente llamada mida accesos nuevos. Las páginas lazy sin PTE
+válida cuentan como no accedidas y no se asignan durante la consulta. La
+máscara se copia al espacio de usuario y se valida el rango consultado.
 
 ---
 
@@ -208,17 +212,79 @@ page table 0x0000000087f23000
    - `.. .. ..0x0000003ffffff000`:
      Página `TRAMPOLINE` con permisos `PTE_R | PTE_X` (flags `0x4b`, sin `PTE_U`). Contiene el código de salto entre usuario y kernel.
 
-2. _Pendiente._
-3. _Pendiente._
-4. _Pendiente._
-5. _Pendiente._
+### 2. ¿Por qué la página de guarda no tiene `PTE_U` y qué ocurre si la pila la alcanza?
 
----
+La página de guarda se deja mapeada, pero se le quita `PTE_U` para que un
+acceso desde usuario falle en la comprobación de permisos. En xv6 la pila de
+usuario no crece automáticamente: si un acceso de la pila alcanza esa página,
+se produce un fallo de página y el kernel termina el proceso en vez de permitir
+que escriba allí. La guarda sirve para detectar el desbordamiento, no es una
+página lazy.
+
+### 3. Además de `getpid()`, ¿qué llamadas podrían acelerarse con una página compartida y cuáles no?
+
+En xv6, `uptime()` podría evitar el trap si el kernel mantuviera un contador de
+ticks legible en una página compartida; habría que aceptar la granularidad y
+la actualización de ese dato. En cambio, `read()`, `write()`, `fork()`,
+`exec()` y `sbrk()` no se reemplazan por una lectura compartida: copian datos,
+cambian estado o requieren validar argumentos y permisos en el kernel. Una
+página compartida sirve para consultar datos pequeños que el kernel publica,
+no para ejecutar las operaciones de esas syscalls.
+
+### 4. ¿Qué riesgo habría si USYSCALL se mapeara con `PTE_W`?
+
+El proceso podría modificar el PID publicado y cualquier otro dato de esa
+página. Aunque eso falsificaría primero la información que observa el propio
+proceso, también sería peligroso si código del kernel confiara después en el
+contenido escrito por usuario. El mapeo usa `PTE_R | PTE_U`, sin permiso de
+escritura para el proceso, y el kernel mantiene el control de los datos.
+
+### 5. ¿Por qué `pgaccess()` devuelve cero para una página `sbrklazy()` no tocada y por qué no debe asignarle memoria?
+
+`sbrklazy()` aumenta el tamaño lógico del proceso, pero no crea una PTE válida
+ni asigna una página física. Como `pgaccess()` solo consulta PTE existentes,
+no encuentra `PTE_A` y deja en cero el bit correspondiente. Asignar memoria
+durante la consulta cambiaría el estado del proceso solo por preguntar y
+alteraría el propósito de la asignación lazy; la página debe materializarse
+cuando ocurra un acceso que genere el fallo de página.
+
+# Resultados de las pruebas
+
+Las evidencias completas de las ejecuciones incluidas en esta entrega están en
+`pruebas/pgtbltest.txt` y `pruebas/usertests.txt`.
+
+- `pgtbltest`: **11 de 11 pruebas aprobadas**.
+- `usertests -q`: **ALL TESTS PASSED**.
+- `git diff --check`: sin errores.
+
+Durante el enlace se observó una advertencia de que `kernel/kernel` y
+`user/_forktest` tienen segmentos `LOAD` con permisos RWX. La advertencia no
+impidió la compilación ni la ejecución satisfactoria de las pruebas.
 
 # Decisiones de diseño
 
-_Pendiente._
+- USYSCALL se ubica inmediatamente debajo de TRAPFRAME y se mapea de solo
+  lectura para usuario. El heap eager y lazy se limita antes de esa región
+  para evitar solapamientos.
+- La página USYSCALL pertenece al ciclo de vida de cada proceso: se reserva
+  durante su creación y se libera cuando se limpia el proceso.
+- `vmprint()` recorre los tres niveles y solo sigue PTE válidas que apuntan a
+  tablas intermedias; las PTE hoja se imprimen como mapeos.
+- `pgaccess()` usa una máscara de 64 bits, no crea páginas para rangos lazy y
+  limpia los bits `PTE_A` consultados para que las llamadas midan intervalos
+  sucesivos de acceso.
 
 # Limitaciones conocidas
 
-_Pendiente._
+- La advertencia de linker RWX permanece; no impidió construir ni probar esta
+  versión.
+- El paquete contiene solo los cambios del proyecto y no una copia autónoma de
+  xv6. Para integrarlo se requiere la base indicada y preservar las rutas.
+- `user/usertests.c` tiene los dos ajustes de límites indicados; no es una
+  copia byte por byte de la base oficial.
+
+# Declaración de uso de IA
+
+Se usó IA como apoyo para revisar el código, diagnosticar
+problemas y preparar la documentación. El grupo revisó la integración y es
+responsable de comprender y sustentar las decisiones y el código entregado.
